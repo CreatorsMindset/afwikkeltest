@@ -1,31 +1,37 @@
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import Landing from "@/pages/landing";
+import Register from "@/pages/register";
+import Test from "@/pages/test";
+import Results from "@/pages/results";
 import NotFound from "@/pages/not-found";
+import { ThemeProvider } from "@/components/theme-provider";
 
 function AppRouter() {
   return (
-    <Switch>
-      {/* Register a <Route path="..." component={...} /> for EVERY page linked in your sidebar/nav. Missing routes cause 404. */}
-      {/* <Route path="/" component={Home}/> */}
-      <Route component={NotFound} />
-    </Switch>
+    <Router hook={useHashLocation}>
+      <Switch>
+        <Route path="/" component={Landing} />
+        <Route path="/inschrijven" component={Register} />
+        <Route path="/test/:participantId" component={Test} />
+        <Route path="/resultaat/:resultId" component={Results} />
+        <Route component={NotFound} />
+      </Switch>
+    </Router>
   );
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
         <Toaster />
-        <Router hook={useHashLocation}>
-          <AppRouter />
-        </Router>
-      </TooltipProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 
