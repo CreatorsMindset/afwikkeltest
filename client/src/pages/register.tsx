@@ -23,20 +23,22 @@ export default function Register() {
   const mutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/participants", {
-        firstName,
-        lastName,
-        email,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
         optIn,
       });
-      return res.json();
+      const json = await res.json();
+      if (!json.id) throw new Error("Geen deelnemer-ID ontvangen van server.");
+      return json as { id: number };
     },
-    onSuccess: (data: { id: number }) => {
+    onSuccess: (data) => {
       navigate(`/test/${data.id}`);
     },
     onError: (error: Error) => {
       toast({
         title: "Er ging iets mis",
-        description: error.message,
+        description: error.message || "Probeer het opnieuw.",
         variant: "destructive",
       });
     },
@@ -47,7 +49,8 @@ export default function Register() {
     if (!firstName.trim()) errs.firstName = "Voornaam is verplicht";
     if (!lastName.trim()) errs.lastName = "Achternaam is verplicht";
     if (!email.trim()) errs.email = "E-mailadres is verplicht";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Ongeldig e-mailadres";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
+      errs.email = "Ongeldig e-mailadres";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -134,8 +137,12 @@ export default function Register() {
                 onCheckedChange={(c) => setOptIn(c === true)}
                 data-testid="checkbox-optIn"
               />
-              <Label htmlFor="optIn" className="text-sm text-muted-foreground leading-relaxed cursor-pointer">
-                Ik ontvang graag af en toe inspiratie en updates over afwikkelen.
+              <Label
+                htmlFor="optIn"
+                className="text-sm text-muted-foreground leading-relaxed cursor-pointer"
+              >
+                Ik ontvang graag af en toe inspiratie en updates over
+                afwikkelen.
               </Label>
             </div>
 
@@ -157,8 +164,8 @@ export default function Register() {
             </Button>
 
             <p className="text-xs text-muted-foreground text-center">
-              Je gegevens worden vertrouwelijk behandeld en enkel gebruikt
-              voor het bezorgen van je resultaat.
+              Je gegevens worden vertrouwelijk behandeld en enkel gebruikt voor
+              het bezorgen van je resultaat.
             </p>
           </form>
         </div>

@@ -1,0 +1,38 @@
+#############################################################
+# Autogit - Afwikkeltest (Node.js) deployment config        #
+# Combell Autogit hooks for afwikkeltest.leiderworden.be    #
+#############################################################
+
+# De SQLite-database moet persistent zijn tussen deploys
+shared_files: [ afwikkeltest.db ]
+
+hooks:
+    setup_before: |
+        exit 0
+    setup_after: |
+        exit 0
+
+    install_before: |
+        exit 0
+    install_after: |
+        # Installeer dependencies en bouw de applicatie
+        npm ci --production=false
+        npm run build
+        exit 0
+
+    sharedsymlink_before: |
+        exit 0
+    sharedsymlink_after: |
+        exit 0
+
+    symlink_before: |
+        exit 0
+    symlink_after: |
+        # Herstart de Node.js applicatie na deploy
+        # (afhankelijk van hoe Combell Node.js processen beheert)
+        exit 0
+
+    cleanup_before: |
+        exit 0
+    cleanup_after: |
+        exit 0

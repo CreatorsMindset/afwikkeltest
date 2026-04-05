@@ -3,7 +3,10 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 
-const sqlite = new Database("afwikkeltest.db");
+// DB_PATH allows Combell shared folder persistence across deploys
+// Default: ./afwikkeltest.db (project root)
+const dbPath = process.env.DB_PATH || "afwikkeltest.db";
+const sqlite = new Database(dbPath);
 const db = drizzle(sqlite);
 
 // Create tables

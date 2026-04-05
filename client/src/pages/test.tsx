@@ -25,12 +25,27 @@ export default function Test() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const totalStatements = statements.length;
   const currentStatement = statements[currentIndex];
-  const progress = ((Object.keys(answers).length) / totalStatements) * 100;
+  const progress = (Object.keys(answers).length / totalStatements) * 100;
   const allAnswered = Object.keys(answers).length === totalStatements;
+
+  // Redirect if invalid participant ID
+  if (!participantId || isNaN(participantId)) {
+    return (
+      <PageShell>
+        <section className="py-20 px-5 text-center">
+          <p className="text-muted-foreground mb-4">
+            Ongeldig deelnemer-ID. Schrijf je eerst in.
+          </p>
+          <Button onClick={() => navigate("/inschrijven")} data-testid="button-go-register">
+            Naar inschrijving
+          </Button>
+        </section>
+      </PageShell>
+    );
+  }
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -42,18 +57,19 @@ export default function Test() {
         scores: JSON.stringify(result.scores),
         emailSent: false,
       });
-      return res.json();
+      const json = await res.json();
+      if (!json.id) throw new Error("Geen resultaat-ID ontvangen van server.");
+      return json as { id: number };
     },
-    onSuccess: (data: { id: number }) => {
+    onSuccess: (data) => {
       navigate(`/resultaat/${data.id}`);
     },
     onError: (error: Error) => {
       toast({
-        title: "Er ging iets mis",
-        description: error.message,
+        title: "Er ging iets mis bij het opslaan",
+        description: error.message || "Probeer het opnieuw.",
         variant: "destructive",
       });
-      setIsSubmitting(false);
     },
   });
 
@@ -66,7 +82,7 @@ export default function Test() {
   }
 
   function handleSubmit() {
-    setIsSubmitting(true);
+    if (!allAnswered) return;
     submitMutation.mutate();
   }
 
@@ -84,7 +100,11 @@ export default function Test() {
                 {Math.round(progress)}% ingevuld
               </span>
             </div>
-            <Progress value={progress} className="h-1.5" data-testid="progress-bar" />
+            <Progress
+              value={progress}
+              className="h-1.5"
+              data-testid="progress-bar"
+            />
           </div>
 
           {/* Statement card */}
@@ -92,7 +112,10 @@ export default function Test() {
             <p className="text-sm text-muted-foreground mb-4 font-medium">
               Stelling {currentIndex + 1}
             </p>
-            <p className="text-base md:text-lg font-medium text-foreground leading-relaxed" data-testid="text-statement">
+            <p
+              className="text-base md:text-lg font-medium text-foreground leading-relaxed"
+              data-testid="text-statement"
+            >
               {currentStatement.text}
             </p>
           </div>
@@ -121,7 +144,11 @@ export default function Test() {
                     }`}
                   >
                     {isSelected && <CheckCircle2 size={16} />}
-                    {!isSelected && <span className="text-xs text-muted-foreground">{value}</span>}
+                    {!isSelected && (
+                      <span className="text-xs text-muted-foreground">
+                        {value}
+                      </span>
+                    )}
                   </span>
                   {label}
                 </button>
@@ -157,11 +184,11 @@ export default function Test() {
             ) : (
               <Button
                 onClick={handleSubmit}
-                disabled={!allAnswered || isSubmitting}
+                disabled={!allAnswered || submitMutation.isPending}
                 className="gap-1"
                 data-testid="button-submit-test"
               >
-                {isSubmitting ? (
+                {submitMutation.isPending ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <>

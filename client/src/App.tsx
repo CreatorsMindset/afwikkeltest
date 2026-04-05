@@ -7,6 +7,7 @@ import Landing from "@/pages/landing";
 import Register from "@/pages/register";
 import Test from "@/pages/test";
 import Results from "@/pages/results";
+import Admin from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -18,6 +19,7 @@ function AppRouter() {
         <Route path="/inschrijven" component={Register} />
         <Route path="/test/:participantId" component={Test} />
         <Route path="/resultaat/:resultId" component={Results} />
+        <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
       </Switch>
     </Router>
