@@ -1,37 +1,60 @@
-import { participants, results, type Participant, type Result, type InsertParticipant, type InsertResult } from "@shared/schema";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
-import { eq } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
+import type { Participant, Result, InsertParticipant, InsertResult } from "@shared/schema";
+
+// ─── JSON file-based storage ───────────────────────────────────
+// Replaces better-sqlite3 to avoid native module issues on
+// managed Node hosting (Combell). Data persists across restarts.
+// ────────────────────────────────────────────────────────────────
+
+interface DbData {
+  participants: Participant[];
+  results: Result[];
+  nextParticipantId: number;
+  nextResultId: number;
+}
 
 // DB_PATH allows Combell shared folder persistence across deploys
-// Default: ./afwikkeltest.db (project root)
-const dbPath = process.env.DB_PATH || "afwikkeltest.db";
-const sqlite = new Database(dbPath);
-const db = drizzle(sqlite);
+// Default: ./data/afwikkeltest.json (project root)
+const dataDir = process.env.DB_PATH
+  ? path.dirname(process.env.DB_PATH)
+  : path.resolve("data");
+const dbFile = process.env.DB_PATH || path.join(dataDir, "afwikkeltest.json");
 
-// Create tables
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS participants (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    opt_in INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  )
-`);
+function ensureDir(): void {
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+}
 
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    participant_id INTEGER NOT NULL,
-    primary_profile TEXT NOT NULL,
-    secondary_profile TEXT,
-    scores TEXT NOT NULL,
-    email_sent INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  )
-`);
+function loadDb(): DbData {
+  ensureDir();
+  if (fs.existsSync(dbFile)) {
+    try {
+      const raw = fs.readFileSync(dbFile, "utf-8");
+      return JSON.parse(raw) as DbData;
+    } catch {
+      console.warn("[Storage] Corrupt JSON — starting fresh.");
+    }
+  }
+  return { participants: [], results: [], nextParticipantId: 1, nextResultId: 1 };
+}
+
+function saveDb(data: DbData): void {
+  ensureDir();
+  // Write to temp then rename for atomicity
+  const tmp = dbFile + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
+  fs.renameSync(tmp, dbFile);
+}
+
+// In-memory cache — read from disk at startup, write-through on every mutation
+let db: DbData = loadDb();
+console.log(
+  `[Storage] JSON store loaded — ${db.participants.length} deelnemers, ${db.results.length} resultaten (${dbFile})`
+);
+
+// ─── IStorage interface (unchanged from before) ────────────────
 
 export interface IStorage {
   createParticipant(data: InsertParticipant): Participant;
@@ -46,34 +69,47 @@ export interface IStorage {
 
 export const storage: IStorage = {
   createParticipant(data: InsertParticipant): Participant {
-    return db.insert(participants).values({
-      ...data,
+    const participant: Participant = {
+      id: db.nextParticipantId++,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      optIn: data.optIn ?? false,
       createdAt: new Date().toISOString(),
-    }).returning().get();
+    };
+    db.participants.push(participant);
+    saveDb(db);
+    return participant;
   },
 
   getParticipant(id: number): Participant | undefined {
-    return db.select().from(participants).where(eq(participants.id, id)).get();
+    return db.participants.find((p) => p.id === id);
   },
 
   createResult(data: InsertResult): Result {
-    return db.insert(results).values({
-      ...data,
+    const result: Result = {
+      id: db.nextResultId++,
+      participantId: data.participantId,
+      primaryProfile: data.primaryProfile,
+      secondaryProfile: data.secondaryProfile ?? null,
+      scores: data.scores,
+      emailSent: data.emailSent ?? false,
       createdAt: new Date().toISOString(),
-    }).returning().get();
+    };
+    db.results.push(result);
+    saveDb(db);
+    return result;
   },
 
   getResult(id: number): Result | undefined {
-    return db.select().from(results).where(eq(results.id, id)).get();
+    return db.results.find((r) => r.id === id);
   },
 
   getResultWithParticipant(id: number) {
-    const result = db.select().from(results).where(eq(results.id, id)).get();
+    const result = db.results.find((r) => r.id === id);
     if (!result) return undefined;
-
-    const participant = db.select().from(participants).where(eq(participants.id, result.participantId)).get();
+    const participant = db.participants.find((p) => p.id === result.participantId);
     if (!participant) return undefined;
-
     return {
       ...result,
       participant: {
@@ -84,14 +120,18 @@ export const storage: IStorage = {
   },
 
   getAllParticipants(): Participant[] {
-    return db.select().from(participants).all();
+    return [...db.participants];
   },
 
   getAllResults(): Result[] {
-    return db.select().from(results).all();
+    return [...db.results];
   },
 
   markEmailSent(resultId: number): void {
-    db.update(results).set({ emailSent: true }).where(eq(results.id, resultId)).run();
+    const result = db.results.find((r) => r.id === resultId);
+    if (result) {
+      result.emailSent = true;
+      saveDb(db);
+    }
   },
 };
