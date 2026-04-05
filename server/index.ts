@@ -22,6 +22,10 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+app.get('/health', (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -93,7 +97,6 @@ app.use((req, res, next) => {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
     },
     () => {
       log(`serving on port ${port}`);
