@@ -12,6 +12,7 @@
     "serve": "node dist/index.cjs",
     "start": "node dist/index.cjs",
     "check": "tsc",
+    "sim": "node sim/run.ts",
     "db:push": "echo 'No database to push — using JSON storage'"
   },
   "dependencies": {
