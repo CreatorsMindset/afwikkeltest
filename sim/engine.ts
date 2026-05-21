@@ -7,11 +7,9 @@ import {
   type SoftLimits,
   type Strategy,
   type ActionKey,
-  newHuman,
-  newHardLimits,
-  newSoftLimits,
 } from "./model.ts";
 import { type ProtocolRun, newProtocolRun, stepProtocols } from "./protocols.ts";
+import { type Shock, randomizedStart, applyShocks } from "./fortune.ts";
 
 const LIVING_COST = 24000;  // jaarlijkse vaste levenskost in euro
 const BASE_INCOME = 16000;  // inkomensbodem voordat vaardigheid en netwerk meetellen
@@ -36,7 +34,9 @@ export interface LifeResult {
   adopted: string[];
   protocolRun: ProtocolRun;
   history: YearRecord[];
+  shocks: Shock[];
   diedAt: number;
+  causeOfDeath: string;
   peakMoney: number;
   final: State;
 }
@@ -57,7 +57,8 @@ function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x;
 }
 
-// Eén levensjaar. Past de toestand en de zachte grenzen rechtstreeks aan.
+// Eén levensjaar. Past de toestand en de zachte grenzen rechtstreeks aan
+// en geeft de exogene schokken van dat jaar terug.
 function stepYear(
   s: State,
   hard: HardLimits,
@@ -65,7 +66,8 @@ function stepYear(
   st: Strategy,
   run: ProtocolRun,
   rng: () => number,
-): void {
+  luck: () => number,
+): Shock[] {
   s.age += 1;
 
   // --- Energiebudget van het jaar ---
@@ -83,9 +85,11 @@ function stepYear(
   };
 
   // --- Natuurlijke erosie: zonder onderhoud zakken conditie en weerbaarheid ---
-  s.fitness = clamp(s.fitness - 1.2, 0, 100);
-  s.resilience = clamp(s.resilience - 0.5, 0, 100);
-  s.mindset = clamp(s.mindset - 0.3, 0, 100);
+  // Traag in de jeugd, sneller met de jaren — protocollen werken dit tegen.
+  const fitnessDecay = 0.4 + Math.max(0, s.age - 35) * 0.045;
+  s.fitness = clamp(s.fitness - fitnessDecay, 0, 100);
+  s.resilience = clamp(s.resilience - 0.25, 0, 100);
+  s.mindset = clamp(s.mindset - 0.15, 0, 100);
 
   // --- Protocollen: de bewezen systemen toepassen (zie protocols.ts) ---
   // Werkt alleen via adherence, en adherence steunt op de defaults-hefboom.
@@ -164,6 +168,11 @@ function stepYear(
   if (st.pushHardLimits) health -= 7; // geleende energie is geen gratis energie
   s.health = clamp(health, 0, 100);
 
+  // --- Exogene schokken: de ongekozen hand (zie fortune.ts) ---
+  // Deze komen uit de aparte `luck`-stroom, los van de strategie; goede
+  // systemen verschuiven hooguit de kans, niet de worp.
+  const shocks = applyShocks(s, luck);
+
   // --- Welzijn: een afgeleide van alle andere toestanden ---
   const financialSecurity = clamp(s.money / 5000, 0, 100); // ~EUR 500k is verzadiging
   s.wellbeing = clamp(
@@ -182,22 +191,28 @@ function stepYear(
   if (s.health <= 0 || s.age >= hard.lifespan) {
     s.alive = false;
   }
+
+  return shocks;
 }
 
 export function simulate(strategy: Strategy, seed: number): LifeResult {
+  // Twee gescheiden toevalsstromen: `rng` voor strategie-interne keuzes,
+  // `luck` voor de ongekozen hand. Zo isoleert een vergelijking puur de
+  // strategie — dezelfde seed levert hetzelfde lot, ongeacht de strategie.
   const rng = mulberry32(seed);
-  const state = newHuman();
-  const hard = newHardLimits();
-  const soft = newSoftLimits();
+  const luck = mulberry32((seed * 0x9e3779b1) >>> 0);
+  // De beginhand — startpositie, genen en echt potentieel — is zelf geloot.
+  const { state, hard, soft } = randomizedStart(luck);
   const run = newProtocolRun(strategy.protocols);
-  // Lichte spreiding op de levensduur, zodat de seed het lot mee bepaalt.
-  hard.lifespan += Math.round((rng() - 0.5) * 8);
 
   const history: YearRecord[] = [];
+  const shocks: Shock[] = [];
   let peakMoney = state.money;
+  let causeOfDeath = "ouderdom";
 
   while (state.alive) {
-    stepYear(state, hard, soft, strategy, run, rng);
+    const yearShocks = stepYear(state, hard, soft, strategy, run, rng, luck);
+    shocks.push(...yearShocks);
     peakMoney = Math.max(peakMoney, state.money);
     history.push({
       age: state.age,
@@ -211,6 +226,12 @@ export function simulate(strategy: Strategy, seed: number): LifeResult {
       wellbeing: state.wellbeing,
       believedIncome: soft.income.believed,
     });
+    if (!state.alive) {
+      const fatal = yearShocks.find((x) => x.fatal);
+      if (fatal) causeOfDeath = fatal.kind;
+      else if (state.health <= 0) causeOfDeath = "gezondheid bezweek";
+      else causeOfDeath = "ouderdom";
+    }
   }
 
   return {
@@ -219,7 +240,9 @@ export function simulate(strategy: Strategy, seed: number): LifeResult {
     adopted: strategy.protocols,
     protocolRun: run,
     history,
+    shocks,
     diedAt: state.age,
+    causeOfDeath,
     peakMoney,
     final: state,
   };
